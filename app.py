@@ -35,10 +35,14 @@ if "config" not in st.session_state:
         "langue": st.query_params.get("l", "Anglais"),
         "niveau": st.query_params.get("n", "A2"),
         "grammaire": st.query_params.get("g", "Général"),
-        "mode": st.query_params.get("m", "Interaction (Dialogue)"),
+        "mode": st.query_params.get("m", "Interaction (Dialogue - EOAI)"),
         "consigne_eleve": st.query_params.get("c", "Présente-toi au tuteur."),
         "role_ia": "Tu es un tuteur de langue bienveillant pour le Tronc Commun (FWB). Focus UAA3."
     }
+
+# Détection automatique du mode élève via URL
+if any(k in st.query_params for k in ["l", "n", "c"]):
+    st.session_state.role = "Eleve"
 
 # --- 2. FONCTIONS ---
 def verifier_licence(cle):
@@ -63,36 +67,39 @@ if st.session_state.role is None:
         if st.button("Démarrer la session"):
             if nom_e: st.session_state.nom_eleve = nom_e; st.session_state.role = "Eleve"; st.rerun()
 
-# --- 4. DASHBOARD PROFESSEUR (RESTAURÉ) ---
+# --- 4. DASHBOARD PROFESSEUR (RESTAURÉ & COMPLET) ---
 elif st.session_state.role == "Professeur":
-    st.title(f"👨‍🏫 Dashboard - {st.session_state.nom_abonne}")
+    st.title(f"👨‍🏫 Dashboard - {st.session_state.get('nom_abonne', 'Abonné')}")
     t_reg, t_cons, t_qr = st.tabs(["🎯 Configuration", "📝 Scénario & Prompt", "📲 Partage"])
     
     with t_reg:
         col1, col2 = st.columns(2)
         with col1:
-            st.session_state.config["langue"] = st.selectbox("Langue cible :", list(lang_map.keys()))
-            st.session_state.config["niveau"] = st.select_slider("Niveau CEFR :", ["A1", "A2", "B1", "B2"])
+            st.session_state.config["langue"] = st.selectbox("Langue cible :", list(lang_map.keys()), index=list(lang_map.keys()).index(st.session_state.config["langue"]))
+            st.session_state.config["niveau"] = st.select_slider("Niveau CEFR :", ["A1", "A2", "B1", "B2"], value=st.session_state.config["niveau"])
         with col2:
             st.session_state.config["mode"] = st.selectbox("Type d'activité :", 
-                ["Interaction (Dialogue - EOAI)", "Production continue (EOSI)", "Tutorat avec conseils d'amélioration"])
-            st.session_state.config["grammaire"] = st.text_input("Attendus grammaticaux (ex: passé composé) :", value=st.session_state.config["grammaire"])
+                ["Interaction (Dialogue - EOAI)", "Production continue (EOSI)", "Tutorat avec conseils d'amélioration"],
+                index=0)
+            st.session_state.config["grammaire"] = st.text_input("Attendus grammaticaux :", value=st.session_state.config["grammaire"])
     
     with t_cons:
-        st.session_state.config["role_ia"] = st.text_area("Rôle de l'IA (Prompt pour le tuteur) :", value=st.session_state.config["role_ia"], help="Décrivez ici comment l'IA doit se comporter.")
+        st.session_state.config["role_ia"] = st.text_area("Rôle de l'IA (Prompt pour le tuteur) :", value=st.session_state.config["role_ia"])
         st.session_state.config["consigne_eleve"] = st.text_area("Consigne affichée à l'élève :", value=st.session_state.config["consigne_eleve"])
 
     with t_qr:
-        p = {"l": st.session_state.config["langue"], "n": st.session_state.config["niveau"], "c": st.session_state.config["consigne_eleve"], "g": st.session_state.config["grammaire"]}
+        p = {"l": st.session_state.config["langue"], "n": st.session_state.config["niveau"], "c": st.session_state.config["consigne_eleve"], "g": st.session_state.config["grammaire"], "m": st.session_state.config["mode"]}
         url = "https://language-lab.streamlit.app/?" + urllib.parse.urlencode(p)
         st.image(qrcode.make(url).get_image(), width=150, caption="Scan pour synchroniser")
 
     if st.sidebar.button("🚀 Lancer le mode Élève"): st.session_state.role = "Eleve"; st.rerun()
-    if st.sidebar.button("🚪 Déconnexion"): st.session_state.role = None; st.rerun()
+    if st.sidebar.button("🚪 Déconnexion"): st.session_state.role = None; st.query_params.clear(); st.rerun()
 
-# --- 5. INTERFACE ÉLÈVE ---
+# --- 5. INTERFACE ÉLÈVE (FIX ATTRIBUTEERROR) ---
 elif st.session_state.role == "Eleve":
-    st.title(f"🎙️ Session de {st.session_state.nom_eleve}")
+    # FIX : Utilisation de .get() pour éviter le crash si le nom est absent
+    nom_affichage = st.session_state.get('nom_eleve', 'Élève')
+    st.title(f"🎙️ Session de {nom_affichage}")
     st.info(f"📋 **Mission :** {st.session_state.config['consigne_eleve']}")
 
     if "current_audio" in st.session_state and st.session_state.current_audio:
@@ -132,8 +139,9 @@ elif st.session_state.role == "Eleve":
             st.session_state.bilan_final = bilan_resp.choices[0].message.content
         
         if "bilan_final" in st.session_state:
-            st.success(st.session_state.bilan_final)
-            st.download_button("📥 Télécharger mon bilan", data=st.session_state.bilan_final, file_name=f"bilan_{st.session_state.nom_eleve}.txt")
+            st.success("Bilan prêt")
+            st.write(st.session_state.bilan_final)
+            st.download_button("📥 Télécharger", data=st.session_state.bilan_final, file_name=f"bilan_{nom_affichage}.txt")
 
         if st.button("⬅️ Retour", key="btn_ret"):
-            st.session_state.messages = []; st.session_state.role = "Professeur"; st.rerun()
+            st.session_state.messages = []; st.session_state.role = "Professeur"; st.query_params.clear(); st.rerun()
