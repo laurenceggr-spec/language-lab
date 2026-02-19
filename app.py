@@ -114,12 +114,12 @@ elif st.session_state.role == "Eleve":
             # Rerender pour afficher le nouveau message et l'audio
             st.rerun()
 
-    # Lecture de la dernière réponse audio (si elle existe)
+    # Lecture de la dernière réponse audio
     if st.session_state.messages and st.session_state.messages[-1]["role"] == "assistant":
-        # On regénère le son pour la dernière réponse
         last_msg = st.session_state.messages[-1]["content"]
-        audio_res = client.audio.speech.create(model="tts-1", voice="alloy", input=last_msg)
-        st.audio(audio_res.content, format="audio/mp3", autoplay=True)
-
-    if st.sidebar.button("⬅️ Quitter"):
-        st.session_state.messages = []; st.session_state.role = None; st.rerun()
+        with st.spinner("Génération de la voix..."):
+            audio_res = client.audio.speech.create(model="tts-1", voice="alloy", input=last_msg)
+            # On ajoute un titre pour que l'élève voie le lecteur
+            st.write("---")
+            st.audio(audio_res.content, format="audio/mp3", autoplay=True)
+            st.info("💡 Si le son ne se lance pas tout seul, appuyez sur Play ci-dessus.")
