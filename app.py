@@ -17,6 +17,7 @@ if "role" not in st.session_state: st.session_state.role = None
 if "nom_eleve" not in st.session_state: st.session_state.nom_eleve = ""
 if "messages" not in st.session_state: st.session_state.messages = []
 if "last_audio" not in st.session_state: st.session_state.last_audio = None
+if "last_processed_hash" not in st.session_state: st.session_state.last_processed_hash = None
 if "config" not in st.session_state:
     st.session_state.config = {
         "langue": "Anglais",
@@ -60,7 +61,7 @@ if st.session_state.role is None:
                 st.rerun()
             else: st.warning("Veuillez entrer un prénom.")
 
-# --- 4. DASHBOARD PROFESSEUR (RESTAURÉ) ---
+# --- 4. DASHBOARD PROFESSEUR ---
 elif st.session_state.role == "Professeur":
     st.title(f"👨‍🏫 Dashboard - {st.session_state.nom_abonne}")
     
@@ -95,29 +96,32 @@ elif st.session_state.role == "Eleve":
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    # Entrée Audio avec protection contre la boucle infinie
+    # Entrée Audio
     audio_value = st.audio_input("Parle maintenant...", key="mic_eleve")
 
-    if audio_value and (st.session_state.get("last_processed_audio") != audio_value.id):
-        with st.spinner("J'écoute..."):
-            transcript = client.audio.transcriptions.create(model="whisper-1", file=("audio.wav", audio_value))
-            texte_eleve = transcript.text
-            st.session_state.messages.append({"role": "user", "content": texte_eleve})
-            
-            prompt_ia = f"{st.session_state.config['role_ia']}. Niveau {st.session_state.config['niveau']}. Focus {st.session_state.config['grammaire']}. Réponds en {st.session_state.config['langue']}."
-            response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{"role": "system", "content": prompt_ia}] + 
-                         [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages]
-            )
-            reponse_ia = response.choices[0].message.content
-            st.session_state.messages.append({"role": "assistant", "content": reponse_ia})
-            
-            # Préparation du son
-            audio_gen = client.audio.speech.create(model="tts-1", voice="alloy", input=reponse_ia)
-            st.session_state.last_audio = audio_gen.content
-            st.session_state.last_processed_audio = audio_value.id
-            st.rerun()
+    if audio_value:
+        # On utilise la taille du fichier pour savoir si c'est un nouvel audio
+        audio_hash = audio_value.size 
+        if st.session_state.last_processed_hash != audio_hash:
+            with st.spinner("J'écoute..."):
+                transcript = client.audio.transcriptions.create(model="whisper-1", file=("audio.wav", audio_value))
+                texte_eleve = transcript.text
+                st.session_state.messages.append({"role": "user", "content": texte_eleve})
+                
+                prompt_ia = f"{st.session_state.config['role_ia']}. Niveau {st.session_state.config['niveau']}. Focus {st.session_state.config['grammaire']}. Réponds en {st.session_state.config['langue']}."
+                response = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[{"role": "system", "content": prompt_ia}] + 
+                             [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages]
+                )
+                reponse_ia = response.choices[0].message.content
+                st.session_state.messages.append({"role": "assistant", "content": reponse_ia})
+                
+                # Préparation du son
+                audio_gen = client.audio.speech.create(model="tts-1", voice="alloy", input=reponse_ia)
+                st.session_state.last_audio = audio_gen.content
+                st.session_state.last_processed_hash = audio_hash
+                st.rerun()
 
     # Lecture du son
     if st.session_state.last_audio:
@@ -126,4 +130,4 @@ elif st.session_state.role == "Eleve":
 
     with st.sidebar:
         if st.button("⬅️ Quitter"):
-            st.session_state.messages = []; st.session_state.role = None; st.rerun()
+            st.session_state.messages = []; st.session_state.role = None; st.session_state.last_processed_hash = None; st.rerun()
