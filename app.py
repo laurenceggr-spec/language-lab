@@ -8,7 +8,7 @@ from io import BytesIO
 # --- 1. CONFIGURATION & UI ---
 st.set_page_config(page_title="Language Lab - FWB", page_icon="🇧🇪", layout="wide")
 
-# CSS pour supprimer les barres de défilement audio inutiles et épurer l'interface
+# CSS pour épurer l'interface et masquer les barres inutiles
 st.markdown("""
     <style>
     audio { height: 35px; width: 100%; }
@@ -26,7 +26,7 @@ else:
 SHEET_ID = "10CcT3xpWgyqye5ekI5_pJgaoBCbVfPQIDmIqfIM6sp8" 
 SHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv"
 
-# Mapping des langues pour forcer la précision de Whisper
+# Mapping des langues pour Whisper (Indispensable pour le Néerlandais)
 lang_map = {"Anglais": "en", "Néerlandais": "nl", "Allemand": "de", "Espagnol": "es"}
 
 # Initialisation Session State
@@ -67,9 +67,10 @@ if st.session_state.role is None:
     with t2:
         nom_e = st.text_input("Ton prénom :")
         if st.button("Démarrer la session"):
-            if nom_e: st.session_state.nom_eleve = nom_e; st.session_state.role = "Eleve"; st.rerun()
+            if nom_e: 
+                st.session_state.nom_eleve = nom_e; st.session_state.role = "Eleve"; st.rerun()
 
-# --- 4. DASHBOARD PROFESSEUR (TOUTES FONCTIONS MAINTENUES) ---
+# --- 4. DASHBOARD PROFESSEUR (VERROUILLÉ) ---
 elif st.session_state.role == "Professeur":
     st.title(f"👨‍🏫 Configuration - {st.session_state.nom_abonne}")
     t_reg, t_cons, t_qr = st.tabs(["🎯 Réglages", "📝 Scénario", "📲 Partage"])
@@ -77,34 +78,32 @@ elif st.session_state.role == "Professeur":
     with t_reg:
         col1, col2 = st.columns(2)
         with col1:
-            st.session_state.config["langue"] = st.selectbox("Langue cible :", ["Anglais", "Néerlandais", "Allemand", "Espagnol"], index=["Anglais", "Néerlandais", "Allemand", "Espagnol"].index(st.session_state.config["langue"]))
+            st.session_state.config["langue"] = st.selectbox("Langue cible :", list(lang_map.keys()), index=list(lang_map.keys()).index(st.session_state.config["langue"]))
             st.session_state.config["niveau"] = st.select_slider("Niveau CEFR :", ["A1", "A2", "B1", "B2"], value=st.session_state.config["niveau"])
         with col2:
             st.session_state.config["grammaire"] = st.text_input("Focus grammatical :", value=st.session_state.config["grammaire"])
             st.session_state.config["role_ia"] = st.text_area("Rôle caché de l'IA :", value=st.session_state.config["role_ia"])
 
     with t_cons:
-        st.session_state.config["consigne_eleve"] = st.text_area("Consigne scénarisée affichée à l'élève :", value=st.session_state.config["consigne_eleve"])
+        st.session_state.config["consigne_eleve"] = st.text_area("Consigne affichée à l'élève :", value=st.session_state.config["consigne_eleve"])
 
     with t_qr:
-        # QR Code Dynamique (Paramètres conservés)
+        # QR Code Dynamique
         p = {"l": st.session_state.config["langue"], "n": st.session_state.config["niveau"], "g": st.session_state.config["grammaire"], "c": st.session_state.config["consigne_eleve"]}
         url = "https://language-lab.streamlit.app/?" + urllib.parse.urlencode(p)
-        qr_img = qrcode.make(url)
-        buf = BytesIO(); qr_img.save(buf)
-        st.image(buf, width=180, caption="Scan pour synchroniser la classe")
+        st.image(qrcode.make(url).get_image(), width=180, caption="Scan pour synchroniser la classe")
 
     if st.sidebar.button("🚀 Lancer le mode Élève"): st.session_state.role = "Eleve"; st.rerun()
     if st.sidebar.button("🚪 Déconnexion"): st.session_state.role = None; st.rerun()
 
-# --- 5. INTERFACE ÉLÈVE (FIX AUDIO & NÉERLANDAIS) ---
+# --- 5. INTERFACE ÉLÈVE (FIX AUDIO, NÉERLANDAIS & DOUBLONS) ---
 elif st.session_state.role == "Eleve":
     st.title(f"🎙️ Session de {st.session_state.get('nom_eleve')}")
     
     with st.expander("📖 Ta mission du jour", expanded=True):
         st.write(st.session_state.config["consigne_eleve"])
 
-    # 1. AUDIO IA (Placé en haut pour être lu sans bloquer le micro)
+    # 1. AUDIO IA (Correctif boucle)
     if "current_audio" in st.session_state and st.session_state.current_audio:
         st.audio(st.session_state.current_audio, format="audio/mpeg", autoplay=True)
         st.session_state.current_audio = None 
@@ -120,7 +119,7 @@ elif st.session_state.role == "Eleve":
         audio_id = audio_file.size
         if st.session_state.last_processed_id != audio_id:
             with st.spinner("Analyse de ta réponse..."):
-                # Transcription FORCÉE dans la langue choisie (Correctif Néerlandais)
+                # Transcription FORCÉE dans la langue (Correctif Néerlandais)
                 code_langue = lang_map.get(st.session_state.config["langue"], "en")
                 trans = client.audio.transcriptions.create(
                     model="whisper-1", 
@@ -129,7 +128,7 @@ elif st.session_state.role == "Eleve":
                 )
                 st.session_state.messages.append({"role": "user", "content": trans.text})
                 
-                # Réponse IA (Verrouillage du Scénario)
+                # Réponse IA (Verrouillage Scénario)
                 sys_prompt = f"""{st.session_state.config['role_ia']}. 
                 SCÉNARIO : {st.session_state.config['consigne_eleve']}.
                 Langue : {st.session_state.config['langue']} (Niveau {st.session_state.config['niveau']}).
@@ -149,16 +148,13 @@ elif st.session_state.role == "Eleve":
     with st.sidebar:
         st.header("🏁 Bilan final")
         if st.button("📊 Générer mon bilan FWB"):
-            with st.spinner("Calcul des compétences..."):
+            with st.spinner("Analyse..."):
                 p_bilan = f"Fais un bilan court (Aisance, Richesse, Intelligibilité) pour le niveau {st.session_state.config['niveau']}."
                 bilan = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role": "system", "content": p_bilan}] + st.session_state.messages)
                 bilan_texte = bilan.choices[0].message.content
                 st.info(bilan_texte)
-                # Téléchargement .txt conservé
                 st.download_button("📥 Télécharger (.txt)", data=bilan_texte, file_name=f"bilan_{st.session_state.nom_eleve}.txt")
-        if st.button("⬅️ Retour"):
-            st.session_state.messages = []; st.session_state.role = "Professeur"; st.rerun()
-            # Bouton de téléchargement
-            st.download_button("📥 Télécharger (.txt)", data=bilan_texte, file_name=f"bilan_{st.session_state.nom_eleve}.txt")
-        if st.button("⬅️ Retour"):
+        
+        # FIX : Clé unique pour éviter l'erreur de duplication
+        if st.button("⬅️ Retour", key="btn_retour_eleve"):
             st.session_state.messages = []; st.session_state.role = "Professeur"; st.rerun()
