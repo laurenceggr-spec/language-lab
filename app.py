@@ -11,9 +11,7 @@ st.set_page_config(page_title="Language Lab", page_icon="🇧🇪", layout="wide
 # /!\ À REMPLIR
 SHEET_ID = "10CcT3xpWgyqye5ekI5_pJgaoBCbVfPQIDmIqfIM6sp8" 
 SHEET_URL = f"https://docs.google.com/spreadsheets/d/10CcT3xpWgyqye5ekI5_pJgaoBCbVfPQIDmIqfIM6sp8/export?format=csv"
-client = openai.OpenAI(api_key="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")
-[connections.gsheets]
-spreadsheet = "https://docs.google.com/spreadsheets/d/1QycENconwTyJB8iaF4rccfvwnIyfnqg2_qHHXl_ZaC8/edit?gid=0#gid=0"
+client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 # Initialisation des variables de session
 if "role" not in st.session_state: st.session_state.role = None
