@@ -1,0 +1,8 @@
+streamlit
+openai
+gTTS
+PyPDF2
+pandas
+qrcode[pil]
+st-gsheets-connection
+fpdf
