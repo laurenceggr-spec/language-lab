@@ -24,6 +24,7 @@ if "config" not in st.session_state:
         "niveau": "A2",
         "grammaire": "Général (Présent/Passé)",
         "mode": "Interaction (Dialogue)",
+        "consigne_eleve": "Présente-toi et réponds aux questions du tuteur.", # Nouveau
         "role_ia": "Tu es un tuteur de langue bienveillant pour des élèves belges du tronc commun."
     }
 
@@ -47,41 +48,45 @@ if st.session_state.role is None:
         if st.button("Connexion Enseignant"):
             nom = verifier_licence(cle)
             if nom:
-                st.session_state.role = "Professeur"
-                st.session_state.nom_abonne = nom
-                st.rerun()
+                st.session_state.role = "Professeur"; st.session_state.nom_abonne = nom; st.rerun()
             else: st.error("Clé invalide.")
             
     with tab2:
         nom_saisi = st.text_input("Entre ton prénom :")
         if st.button("Commencer l'exercice"):
             if nom_saisi:
-                st.session_state.nom_eleve = nom_saisi
-                st.session_state.role = "Eleve"
-                st.rerun()
+                st.session_state.nom_eleve = nom_saisi; st.session_state.role = "Eleve"; st.rerun()
             else: st.warning("Veuillez entrer un prénom.")
 
 # --- 4. DASHBOARD PROFESSEUR ---
 elif st.session_state.role == "Professeur":
     st.title(f"👨‍🏫 Dashboard - {st.session_state.nom_abonne}")
     
-    col_a, col_b = st.columns(2)
-    with col_a:
-        st.subheader("🎯 Réglages Pédagogiques")
-        st.session_state.config["langue"] = st.selectbox("Langue :", ["Anglais", "Néerlandais", "Allemand", "Espagnol"])
-        st.session_state.config["niveau"] = st.select_slider("Niveau Tronc Commun :", ["A1", "A2", "B1", "B2"])
-        st.session_state.config["grammaire"] = st.text_input("Focus Grammatical :", value=st.session_state.config["grammaire"])
-        st.session_state.config["mode"] = st.radio("Mode d'exercice :", ["Interaction (Dialogue)", "Production continue"])
+    # Création des onglets dans l'espace prof
+    t_reglages, t_consignes, t_partage = st.tabs(["🎯 Réglages", "📝 Consignes à l'élève", "📲 Partage"])
+    
+    with t_reglages:
+        col1, col2 = st.columns(2)
+        with col1:
+            st.session_state.config["langue"] = st.selectbox("Langue :", ["Anglais", "Néerlandais", "Allemand", "Espagnol"])
+            st.session_state.config["niveau"] = st.select_slider("Niveau Tronc Commun :", ["A1", "A2", "B1", "B2"])
+        with col2:
+            st.session_state.config["grammaire"] = st.text_input("Focus Grammatical :", value=st.session_state.config["grammaire"])
+            st.session_state.config["mode"] = st.radio("Mode d'exercice :", ["Interaction (Dialogue)", "Production continue"])
+        st.session_state.config["role_ia"] = st.text_area("Consigne cachée pour l'IA (son rôle) :", value=st.session_state.config["role_ia"])
 
-    with col_b:
-        st.subheader("🤖 Personnalisation de l'IA")
-        st.session_state.config["role_ia"] = st.text_area("Consigne spécifique pour l'IA :", value=st.session_state.config["role_ia"])
-        
-        st.divider()
-        st.subheader("📲 Partage")
+    with t_consignes:
+        st.subheader("Instructions pour l'élève")
+        st.info("Ce texte sera visible par l'élève dès le début de son exercice.")
+        st.session_state.config["consigne_eleve"] = st.text_area(
+            "Décrivez l'exercice (ex: 'Imagine que tu es au restaurant et que tu commandes un repas') :", 
+            value=st.session_state.config["consigne_eleve"]
+        )
+
+    with t_partage:
         url_app = "https://language-lab.streamlit.app"
         qr = qrcode.make(url_app); buf = BytesIO(); qr.save(buf)
-        st.image(buf, width=150, caption="QR Code pour la classe")
+        st.image(buf, width=200, caption="QR Code pour la classe")
 
     st.sidebar.divider()
     if st.sidebar.button("🚀 Passer au mode Élève"): st.session_state.role = "Eleve"; st.rerun()
@@ -90,17 +95,19 @@ elif st.session_state.role == "Professeur":
 # --- 5. INTERFACE ÉLÈVE ---
 elif st.session_state.role == "Eleve":
     st.title(f"🎙️ Hello {st.session_state.nom_eleve} !")
-    st.info(f"Langue : {st.session_state.config['langue']} | Niveau : {st.session_state.config['niveau']} | Focus : {st.session_state.config['grammaire']}")
+    
+    # Affichage des consignes et réglages
+    with st.expander("📖 Voir tes consignes pour cet exercice", expanded=True):
+        st.markdown(f"**Objectif :** {st.session_state.config['consigne_eleve']}")
+        st.caption(f"Langue : {st.session_state.config['langue']} | Niveau : {st.session_state.config['niveau']} | Focus : {st.session_state.config['grammaire']}")
 
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    # Entrée Audio
     audio_value = st.audio_input("Parle maintenant...", key="mic_eleve")
 
     if audio_value:
-        # On utilise la taille du fichier pour savoir si c'est un nouvel audio
         audio_hash = audio_value.size 
         if st.session_state.last_processed_hash != audio_hash:
             with st.spinner("J'écoute..."):
@@ -117,17 +124,15 @@ elif st.session_state.role == "Eleve":
                 reponse_ia = response.choices[0].message.content
                 st.session_state.messages.append({"role": "assistant", "content": reponse_ia})
                 
-                # Préparation du son
-                audio_gen = client.audio.speech.create(model="tts-1", voice="alloy", input=reponse_ia)
+                # Correctif format audio MP3
+                audio_gen = client.audio.speech.create(model="tts-1", voice="alloy", input=reponse_ia, response_format="mp3")
                 st.session_state.last_audio = audio_gen.content
                 st.session_state.last_processed_hash = audio_hash
                 st.rerun()
 
-    # Lecture du son
     if st.session_state.last_audio:
-        st.audio(st.session_state.last_audio, format="audio/mp3", autoplay=True)
+        st.audio(st.session_state.last_audio, format="audio/mpeg", autoplay=True)
         st.session_state.last_audio = None
 
-    with st.sidebar:
-        if st.button("⬅️ Quitter"):
-            st.session_state.messages = []; st.session_state.role = None; st.session_state.last_processed_hash = None; st.rerun()
+    if st.sidebar.button("⬅️ Quitter"):
+        st.session_state.messages = []; st.session_state.role = None; st.session_state.last_processed_hash = None; st.rerun()
